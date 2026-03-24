@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+deepeval
+google-generativeai
+google-genai
+python-dotenv
+pandas
+pydantic
+sqlalchemy[asyncio]
+aiosqlite
