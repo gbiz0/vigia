@@ -50,8 +50,7 @@ Crie o arquivo `.env` na raiz do projeto:
 ```env
 GOOGLE_API_KEY=sua_chave_google_aqui
 DATABASE_URL=sqlite+aiosqlite:///./data/vigia.db
-CONFIDENT_METRIC_LOGGING_VERBOSE=0
-DEEPEVAL_TELEMETRY_OPT_OUT=YES
+CONFIDENT_API_KEY=sua_chave_confident_aqui
 ```
 
 Crie a pasta de dados persistentes:
