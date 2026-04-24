@@ -505,3 +505,26 @@ body { background: #0a0a0f; }
   border-color: #2e2e42;
   color: #f0f0ff;
 }
+
+.delete-btn {
+  background: none;
+  border: 1px solid #3a3a4e;
+  border-radius: 6px;
+  color: #888899;
+  padding: 6px 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.delete-btn:active {
+  transform: scale(0.95);
+}

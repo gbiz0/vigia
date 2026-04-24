@@ -235,6 +235,19 @@ async def get_evaluations():
         evaluations_list = result.scalars().all()
         return evaluations_list
 
+@app.delete("/api/evaluate/{evaluation_id}")
+async def delete_evaluation(evaluation_id: int):
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Evaluation).where(Evaluation.id == evaluation_id))
+        evaluation = result.scalar_one_or_none()
+        
+        if not evaluation:
+            raise HTTPException(status_code=404, detail="Avaliação não encontrada")
+        
+        await session.delete(evaluation)
+        await session.commit()
+        return {"message": "Avaliação deletada com sucesso", "id": evaluation_id}
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(

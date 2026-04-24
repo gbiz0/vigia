@@ -4,7 +4,7 @@ import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Legend, CartesianGrid, Tooltip, Area, AreaChart, XAxis, YAxis
 } from 'recharts';
-import { Play, Activity, History, Zap, TrendingUp, Shield, AlertCircle, CheckCircle, Clock, ChevronRight, RefreshCw, Download } from 'lucide-react';
+import { Play, Activity, History, Zap, TrendingUp, Shield, AlertCircle, CheckCircle, Clock, ChevronRight, RefreshCw, Download, Trash2 } from 'lucide-react';
 import './styles/App.css';
 
 const API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000/api`;
@@ -125,6 +125,21 @@ export default function App() {
       showAlert('CSV exportado com sucesso!');
     } catch (err) {
       showAlert('Erro ao exportar CSV', 'error');
+    }
+  };
+
+  const handleDeleteEvaluation = async (evaluationId) => {
+    if (!window.confirm('Tem certeza que deseja deletar esta avaliação? Esta ação não pode ser desfeita.')) {
+      return;
+    }
+    
+    try {
+      await axios.delete(`${API_BASE_URL}/evaluate/${evaluationId}`);
+      showAlert('Avaliação deletada com sucesso!');
+      fetchEvaluations();
+    } catch (err) {
+      const errorMsg = err.response?.data?.detail || 'Erro ao deletar avaliação';
+      showAlert(errorMsg, 'error');
     }
   };
 
@@ -458,9 +473,18 @@ export default function App() {
                             <Clock size={12} />
                             {new Date(ev.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </div>
-                          <span className={`score-pill ${getScoreClass(score)}`}>
-                            Integridade {(score * 100).toFixed(0)}%
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span className={`score-pill ${getScoreClass(score)}`}>
+                              Integridade {(score * 100).toFixed(0)}%
+                            </span>
+                            <button
+                              onClick={() => handleDeleteEvaluation(ev.id)}
+                              className="delete-btn"
+                              title="Deletar esta avaliação"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
                         </div>
                         <div className="history-input">
                           <strong style={{ color: '#444455', fontSize: 11 }}>INPUT</strong> &nbsp;
