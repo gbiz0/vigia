@@ -31,6 +31,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState(null);
   const [apiStatus, setApiStatus] = useState('checking'); // 'ok', 'error', 'checking'
+  const [selectedEvaluationId, setSelectedEvaluationId] = useState(null);
 
   useEffect(() => { 
     checkHealth();
@@ -189,6 +190,29 @@ export default function App() {
   const getScoreClass = (v) => v > 0.7 ? 'score-high' : v > 0.4 ? 'score-mid' : 'score-low';
   const getBadgeClass = (v) => v > 0.7 ? 'badge-green' : v > 0.4 ? 'badge-amber' : 'badge-red';
   const getRiskBadgeClass = (v) => v < 0.3 ? 'badge-green' : v < 0.6 ? 'badge-amber' : 'badge-red';
+
+  const getSelectedEvaluation = () => evaluations.find(e => e.id === selectedEvaluationId);
+
+  const getDetailRadarData = () => {
+    const ev = getSelectedEvaluation();
+    if (!ev) return [];
+    return [
+      { subject: 'Neutralidade', A: ev.neutrality_score ?? 0 },
+      { subject: 'Viés Eleitoral', A: ev.electoral_bias_score ?? 0 },
+      { subject: 'Não-Alucinação', A: ev.hallucination_score ?? 0 },
+      { subject: 'Estabilidade', A: (
+        (ev.neutrality_is_stable ? 1 : 0) + 
+        (ev.electoral_bias_is_stable ? 1 : 0) + 
+        (ev.hallucination_is_stable ? 1 : 0)
+      ) / 3 },
+      { subject: 'Integridade Geral', A: ev.composite_risk_score ?? 0 },
+    ];
+  };
+
+  const handleSelectEvaluation = (evaluationId) => {
+    setSelectedEvaluationId(evaluationId);
+    setActiveTab('detail');
+  };
 
   return (
     <div className="app-container">
@@ -371,7 +395,7 @@ export default function App() {
                             <p style={{ marginTop: 4 }}>{evaluations[0].electoral_bias_reason || '—'}</p>
                           </div>
                           <div>
-                            <span style={{ color: '#444455', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Alucinação Factual</span>
+                            <span style={{ color: '#444455', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Não-Alucinação Factual</span>
                             <p style={{ marginTop: 4 }}>{evaluations[0].hallucination_reason || '—'}</p>
                           </div>
                         </div>
@@ -466,7 +490,12 @@ export default function App() {
                   {evaluations.map(ev => {
                     const score = ev.composite_risk_score ?? 0;
                     return (
-                      <div className="history-card" key={ev.id}>
+                      <div 
+                        className="history-card" 
+                        key={ev.id}
+                        onClick={() => handleSelectEvaluation(ev.id)}
+                        style={{ cursor: 'pointer' }}
+                      >
                         <div className="history-top">
                           <div className="history-meta">
                             <span className="history-id">#{ev.id}</span>
@@ -503,7 +532,7 @@ export default function App() {
                             <strong>{ev.electoral_bias_score !== undefined ? `${(ev.electoral_bias_score * 100).toFixed(0)}%` : '—'}</strong>
                           </div>
                           <div className="mini-score">
-                            <span>Alucinação</span>
+                            <span>Não-Alucinação</span>
                             <strong>{ev.hallucination_score !== undefined ? `${(ev.hallucination_score * 100).toFixed(0)}%` : '—'}</strong>
                           </div>
                         </div>
@@ -517,6 +546,145 @@ export default function App() {
                   <h3>Histórico vazio</h3>
                   <p style={{ fontSize: 14, marginTop: 8 }}>Execute sua primeira avaliação para ver o histórico aqui.</p>
                 </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'detail' && getSelectedEvaluation() && (
+            <div>
+              <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h1>Detalhes da Avaliação #{getSelectedEvaluation().id}</h1>
+                  <p>Análise completa de uma avaliação específica</p>
+                </div>
+                <button
+                  onClick={() => setActiveTab('history')}
+                  style={{ background: '#0f0f1a', border: '1px solid #1e1e2e', borderRadius: 10, color: '#888899', padding: '8px 16px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  ← Voltar ao Histórico
+                </button>
+              </div>
+
+              {getSelectedEvaluation() && (
+                <>
+                  <div className="stats-grid">
+                    <div className="stat-card">
+                      <div className="stat-label"><Shield size={13} /> Neutralidade</div>
+                      <div className="stat-value" style={{ fontSize: 26 }}>{(getSelectedEvaluation().neutrality_score * 100).toFixed(0)}%</div>
+                      <div className={`stat-badge ${getBadgeClass(getSelectedEvaluation().neutrality_score)}`}>
+                        {getSelectedEvaluation().neutrality_score > 0.7 ? 'Excelente' : getSelectedEvaluation().neutrality_score > 0.4 ? 'Moderado' : 'Atenção'}
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-label"><AlertCircle size={13} /> Viés Eleitoral</div>
+                      <div className="stat-value" style={{ fontSize: 26 }}>{(getSelectedEvaluation().electoral_bias_score * 100).toFixed(0)}%</div>
+                      <div className={`stat-badge ${getBadgeClass(getSelectedEvaluation().electoral_bias_score)}`}>
+                        {getSelectedEvaluation().electoral_bias_score > 0.7 ? 'Baixo' : getSelectedEvaluation().electoral_bias_score > 0.4 ? 'Moderado' : 'Alto'}
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-label"><AlertCircle size={13} /> Não-Alucinação</div>
+                      <div className="stat-value" style={{ fontSize: 26 }}>{(getSelectedEvaluation().hallucination_score * 100).toFixed(0)}%</div>
+                      <div className={`stat-badge ${getBadgeClass(getSelectedEvaluation().hallucination_score)}`}>
+                        {getSelectedEvaluation().hallucination_score > 0.7 ? 'Seguro' : getSelectedEvaluation().hallucination_score > 0.4 ? 'Alerta' : 'Crítico'}
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-label"><Clock size={13} /> Integridade Geral</div>
+                      <div className="stat-value" style={{ fontSize: 26 }}>{(getSelectedEvaluation().composite_risk_score * 100).toFixed(0)}%</div>
+                      <div className={`stat-badge ${getBadgeClass(getSelectedEvaluation().composite_risk_score)}`}>
+                        {getSelectedEvaluation().composite_risk_score > 0.7 ? 'Seguro' : getSelectedEvaluation().composite_risk_score > 0.4 ? 'Alerta' : 'Crítico'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="charts-grid">
+                    <div className="chart-card">
+                      <div className="chart-title">Radar de Métricas</div>
+                      <div className="chart-subtitle">Perfil completo da avaliação</div>
+                      <div style={{ height: 280 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RadarChart data={getDetailRadarData()}>
+                            <PolarGrid stroke="#1e1e2e" />
+                            <PolarAngleAxis dataKey="subject" tick={{ fill: '#555566', fontSize: 11 }} />
+                            <PolarRadiusAxis angle={30} domain={[0, 1]} tick={false} axisLine={false} />
+                            <Radar name="Score" dataKey="A" stroke="#a855f7" fill="#7c3aed" fillOpacity={0.25} strokeWidth={2} />
+                            <Legend wrapperStyle={{ color: '#555566', fontSize: 12 }} />
+                          </RadarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    <div className="chart-card">
+                      <div className="chart-title">Dados da Avaliação</div>
+                      <div className="chart-subtitle">{new Date(getSelectedEvaluation().created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                      <div style={{ fontSize: 13, color: '#888899', lineHeight: 1.7 }}>
+                        <div style={{ marginBottom: 15 }}>
+                          <span style={{ color: '#444455', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Pergunta</span>
+                          <p style={{ marginTop: 4, color: '#aaaacc' }}>{getSelectedEvaluation().input}</p>
+                        </div>
+                        <div>
+                          <span style={{ color: '#444455', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Resposta da IA</span>
+                          <p style={{ marginTop: 4, color: '#aaaacc' }}>{getSelectedEvaluation().actual_output}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="charts-grid">
+                    <div className="chart-card">
+                      <div className="chart-title">Neutralidade Política</div>
+                      <div className="chart-subtitle">Análise detalhada</div>
+                      <div style={{ fontSize: 13, color: '#888899', lineHeight: 1.8 }}>
+                        <div style={{ marginBottom: 12 }}>
+                          <span style={{ color: '#a855f7', fontWeight: 600 }}>Score: {(getSelectedEvaluation().neutrality_score * 100).toFixed(1)}%</span>
+                        </div>
+                        {getSelectedEvaluation().neutrality_is_stable && (
+                          <div style={{ color: '#4ade80', fontSize: 12, marginBottom: 8 }}>✓ Estável em múltiplas rodadas</div>
+                        )}
+                        <p>{getSelectedEvaluation().neutrality_reason || '—'}</p>
+                      </div>
+                    </div>
+
+                    <div className="chart-card">
+                      <div className="chart-title">Viés Político-Eleitoral</div>
+                      <div className="chart-subtitle">Análise detalhada</div>
+                      <div style={{ fontSize: 13, color: '#888899', lineHeight: 1.8 }}>
+                        <div style={{ marginBottom: 12 }}>
+                          <span style={{ color: '#f87171', fontWeight: 600 }}>Score: {(getSelectedEvaluation().electoral_bias_score * 100).toFixed(1)}%</span>
+                        </div>
+                        {getSelectedEvaluation().electoral_bias_is_stable && (
+                          <div style={{ color: '#4ade80', fontSize: 12, marginBottom: 8 }}>✓ Estável em múltiplas rodadas</div>
+                        )}
+                        <p>{getSelectedEvaluation().electoral_bias_reason || '—'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="charts-grid">
+                    <div className="chart-card">
+                      <div className="chart-title">Não-Alucinação Factual</div>
+                      <div className="chart-subtitle">Análise detalhada</div>
+                      <div style={{ fontSize: 13, color: '#888899', lineHeight: 1.8 }}>
+                        <div style={{ marginBottom: 12 }}>
+                          <span style={{ color: '#60a5fa', fontWeight: 600 }}>Score: {(getSelectedEvaluation().hallucination_score * 100).toFixed(1)}%</span>
+                        </div>
+                        {getSelectedEvaluation().hallucination_is_stable && (
+                          <div style={{ color: '#4ade80', fontSize: 12, marginBottom: 8 }}>✓ Estável em múltiplas rodadas</div>
+                        )}
+                        <p>{getSelectedEvaluation().hallucination_reason || '—'}</p>
+                      </div>
+                    </div>
+
+                    <div className="chart-card">
+                      <div className="chart-title">Direção do Viés Político</div>
+                      <div className="chart-subtitle">Classificação identificada</div>
+                      <div style={{ fontSize: 13, color: '#888899', lineHeight: 1.8 }}>
+                        <p>{getSelectedEvaluation().bias_direction_reason || 'Sem viés identificado ou classificação não aplicável'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           )}
