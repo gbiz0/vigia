@@ -278,6 +278,24 @@ body { background: #0a0a0f; }
 .field-textarea:focus { border-color: #7c3aed; }
 .field-textarea::placeholder { color: #333344; }
 
+.field-select {
+  width: 100%;
+  background: #0f0f1a;
+  border: 1px solid #1e1e2e;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  color: #d0d0e8;
+  transition: border-color 0.2s;
+  outline: none;
+  cursor: pointer;
+}
+
+.field-select:focus { border-color: #7c3aed; }
+.field-select:disabled { opacity: 0.6; cursor: not-allowed; }
+.field-select option { background: #0f0f1a; color: #d0d0e8; }
+
 .run-btn {
   width: 100%;
   padding: 16px;

@@ -27,6 +27,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [prompt, setPrompt] = useState('');
   const [output, setOutput] = useState('');
+  const [model, setModel] = useState('');
   const [evaluations, setEvaluations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState(null);
@@ -86,12 +87,13 @@ export default function App() {
       await axios.post(`${API_BASE_URL}/evaluate/`, { 
         input: prompt, 
         output,
+        model: model || null,
         reliability_runs: 1 
       }, {
         timeout: 300000 // 5 minutos
       });
       showAlert('Avaliação concluída com sucesso!');
-      setPrompt(''); setOutput('');
+      setPrompt(''); setOutput(''); setModel('');
       fetchEvaluations();
       setActiveTab('dashboard');
     } catch (err) {
@@ -449,6 +451,24 @@ export default function App() {
                 />
               </div>
 
+              <div className="field-group">
+                <div className="field-label">🤖 Modelo utilizado (opcional)</div>
+                <select
+                  className="field-select"
+                  value={model}
+                  onChange={e => setModel(e.target.value)}
+                  disabled={loading}
+                >
+                  <option value="">Selecione um modelo...</option>
+                  <option value="ChatGPT">ChatGPT</option>
+                  <option value="Claude">Claude</option>
+                  <option value="Gemini">Gemini</option>
+                  <option value="Llama">Llama</option>
+                  <option value="Mistral">Mistral</option>
+                  <option value="Outro">Outro</option>
+                </select>
+              </div>
+
               <button
                 className={`run-btn ${loading ? 'loading' : ''}`}
                 onClick={handleRunTest}
@@ -501,6 +521,7 @@ export default function App() {
                             <span className="history-id">#{ev.id}</span>
                             <Clock size={12} />
                             {new Date(ev.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            {ev.model && <span style={{ marginLeft: '12px', fontSize: '12px', color: '#888899' }}>🤖 {ev.model}</span>}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <span className={`score-pill ${getScoreClass(score)}`}>
@@ -623,6 +644,12 @@ export default function App() {
                           <span style={{ color: '#444455', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Pergunta</span>
                           <p style={{ marginTop: 4, color: '#aaaacc' }}>{getSelectedEvaluation().input}</p>
                         </div>
+                        {getSelectedEvaluation().model && (
+                          <div style={{ marginBottom: 15 }}>
+                            <span style={{ color: '#444455', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>🤖 Modelo Utilizado</span>
+                            <p style={{ marginTop: 4, color: '#aaaacc' }}>{getSelectedEvaluation().model}</p>
+                          </div>
+                        )}
                         <div>
                           <span style={{ color: '#444455', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Resposta da IA</span>
                           <p style={{ marginTop: 4, color: '#aaaacc' }}>{getSelectedEvaluation().actual_output}</p>

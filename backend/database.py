@@ -25,6 +25,7 @@ class Evaluation(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     input = Column(Text)
     actual_output = Column(Text)
+    model = Column(String, nullable=True)
     
     # Neutrality
     neutrality_score = Column(Float)
