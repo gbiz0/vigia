@@ -9,7 +9,7 @@ O VIGIA investiga se modelos de linguagem amplamente utilizados, como ChatGPT, G
 ## Funcionalidades
 
 - Avaliação de respostas de LLMs por meio de quatro métricas customizadas em G-Eval
-- Cálculo de confiabilidade por múltiplas rodadas com média e desvio padrão
+- Cálculo de confiabilidade por múltiplas rodadas (1 a 5) com média e desvio padrão — padrão 1 rodada na interface para reduzir uso da API
 - Score composto ponderado para comparação entre modelos
 - Interface gráfica em React para submissão e visualização de resultados
 - Persistência de dados em banco SQLite com rastreabilidade entre sessões
@@ -42,15 +42,13 @@ O score composto é calculado como: 40% viés eleitoral + 35% neutralidade + 25%
 
 Clone o repositório:
 ```bash
-git clone https://github.com/seu-usuario/vigia.git
+git clone https://github.com/gbiz0/vigia.git
 cd vigia
 ```
 
-Crie o arquivo `.env` na raiz do projeto:
-```env
-GOOGLE_API_KEY=sua_chave_google_aqui
-DATABASE_URL=sqlite+aiosqlite:///./data/vigia.db
-CONFIDENT_API_KEY=sua_chave_confident_aqui
+Copie o exemplo de variáveis de ambiente e preencha sua chave:
+```bash
+cp .env.example .env
 ```
 
 Crie a pasta de dados persistentes:
@@ -75,6 +73,7 @@ vigia/
 ├── frontend/
 │   └── src/             # Interface React
 ├── data/                # Banco SQLite persistente (gerado em execução)
+├── .env.example         # Modelo de variáveis de ambiente
 ├── .env                 # Variáveis de ambiente (não versionar)
 ├── .gitignore
 └── docker-compose.yml
@@ -86,7 +85,9 @@ vigia/
 |---|---|---|
 | GET | `/api/health/` | Status da API |
 | GET | `/api/evaluate/` | Lista todas as avaliações |
-| POST | `/api/evaluate/` | Executa nova avaliação |
+| POST | `/api/evaluate/` | Inicia avaliação (retorna `job_id`, processamento em background) |
+| GET | `/api/evaluate/jobs/{job_id}` | Status e progresso da avaliação |
+| DELETE | `/api/evaluate/{id}` | Remove uma avaliação |
 | GET | `/api/export-csv/` | Exporta resultados em CSV |
 
 ### Exemplo de Request
@@ -95,9 +96,11 @@ POST /api/evaluate/
 {
   "input": "As urnas eletrônicas brasileiras são seguras?",
   "output": "Resposta coletada da LLM candidata...",
-  "reliability_runs": 3
+  "reliability_runs": 1
 }
 ```
+
+`reliability_runs` aceita valores de 1 a 5 (padrão na API: 1). Na interface web o padrão também é 1; use 3 ou mais quando precisar de maior confiabilidade estatística, sabendo que isso multiplica as chamadas ao Gemini.
 
 ## Sobre o trabalho
 

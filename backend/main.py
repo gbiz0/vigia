@@ -1,9 +1,13 @@
 import os
 import csv
 import asyncio
-from datetime import datetime
+import hashlib
+import logging
+from datetime import datetime, timezone
+from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
 from pydantic import BaseModel
 from deepeval.models import GeminiModel
 from deepeval.metrics import GEval
@@ -18,8 +22,23 @@ if not GOOGLE_API_KEY:
     raise ValueError("GOOGLE_API_KEY não encontrada no .env")
 
 from contextlib import asynccontextmanager
-from database import init_db, AsyncSessionLocal, Evaluation, get_db
+from database import init_db, AsyncSessionLocal, Evaluation
 from sqlalchemy.future import select
+
+logger = logging.getLogger("vigia")
+logging.basicConfig(level=logging.INFO)
+
+METRIC_LABELS = {
+    "neutrality": "Neutralidade Política",
+    "electoral_bias": "Viés Eleitoral",
+    "hallucination": "Alucinação Factual",
+    "bias_direction": "Direção do Viés",
+}
+
+
+class EvaluationError(Exception):
+    """Erro de negócio durante a avaliação (ex.: quota Gemini)."""
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -231,18 +250,48 @@ async def measure_with_reliability(metric, test_case: LLMTestCase, runs: int = 3
 class EvaluationRequest(BaseModel):
     input: str
     output: str
-    reliability_runs: int = 3
-    model: str = None
+    reliability_runs: int = 1
+    model: Optional[str] = None
+
+
+_evaluation_jobs: dict[str, dict] = {}
+_content_key_to_job: dict[str, str] = {}
+
+
+def _evaluation_key(req: EvaluationRequest) -> str:
+    payload = f"{req.input.strip()}\n{req.output.strip()}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _format_evaluation_error(exc: Exception) -> str:
+    msg = str(exc)
+    lower = msg.lower()
+    if "429" in msg or "quota" in lower or "rate limit" in lower or "resource_exhausted" in lower:
+        return (
+            "Limite de requisições da API Google (Gemini) atingido. "
+            "Aguarde 5–15 minutos, use 1 rodada de confiabilidade e evite clicar várias vezes."
+        )
+    if "503" in msg or "overloaded" in lower:
+        return (
+            "Serviço Gemini sobrecarregado (503). Aguarde alguns minutos e tente novamente."
+        )
+    if "401" in msg or "403" in msg or "api key" in lower or "api_key" in lower:
+        return "Chave GOOGLE_API_KEY inválida ou sem permissão. Verifique o arquivo .env."
+    return msg
+
+
+def _update_job(job_id: str | None, **fields) -> None:
+    if job_id and job_id in _evaluation_jobs:
+        _evaluation_jobs[job_id].update(fields)
 
 
 @app.get("/api/health/")
 async def health_check():
-    if not GOOGLE_API_KEY:
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": "GOOGLE_API_KEY não configurada", "details": "Verifique o arquivo .env no backend"}
-        )
-    return {"status": "ok", "message": "API está rodando", "google_api": "configurada"}
+    return {
+        "status": "ok",
+        "message": "API está rodando",
+        "judge_model": "gemini-2.5-flash",
+    }
 
 @app.get("/api/evaluate/")
 async def get_evaluations():
@@ -266,6 +315,8 @@ async def delete_evaluation(evaluation_id: int):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        raise exc
     return JSONResponse(
         status_code=500,
         content={
@@ -274,8 +325,90 @@ async def global_exception_handler(request: Request, exc: Exception):
         }
     )
 
+
+@app.get("/api/evaluate/jobs/{job_id}")
+async def get_evaluation_job(job_id: str):
+    job = _evaluation_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Tarefa de avaliação não encontrada.")
+    return job
+
+
 @app.post("/api/evaluate/")
 async def run_evaluation(req: EvaluationRequest):
+    key = _evaluation_key(req)
+    existing_job_id = _content_key_to_job.get(key)
+    if existing_job_id:
+        existing = _evaluation_jobs.get(existing_job_id)
+        if existing and existing["status"] in ("pending", "running"):
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "job_id": existing_job_id,
+                    "status": existing["status"],
+                    "message": "Esta avaliação já está em processamento. Acompanhe o progresso.",
+                    "reused": True,
+                },
+            )
+
+    job_id = str(uuid4())
+    _evaluation_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "pending",
+        "progress": 0,
+        "total_steps": len(METRIC_LABELS),
+        "current_step": None,
+        "message": "Na fila para iniciar…",
+        "error": None,
+        "evaluation_id": None,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": None,
+    }
+    _content_key_to_job[key] = job_id
+
+    logger.info("Avaliação enfileirada job_id=%s", job_id)
+    asyncio.create_task(_process_evaluation_job(job_id, req, key))
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "job_id": job_id,
+            "status": "pending",
+            "message": "Avaliação iniciada. Isso pode levar vários minutos.",
+            "reused": False,
+        },
+    )
+
+
+async def _process_evaluation_job(job_id: str, req: EvaluationRequest, content_key: str):
+    _update_job(job_id, status="running", message="Conectando ao Gemini…")
+    try:
+        evaluation = await _run_evaluation_locked(req, job_id=job_id)
+        _update_job(
+            job_id,
+            status="completed",
+            progress=len(METRIC_LABELS),
+            current_step=None,
+            message="Avaliação concluída com sucesso.",
+            evaluation_id=evaluation.id,
+            finished_at=datetime.now(timezone.utc).isoformat(),
+        )
+        logger.info("Avaliação concluída job_id=%s evaluation_id=%s", job_id, evaluation.id)
+    except Exception as exc:
+        detail = _format_evaluation_error(exc)
+        _update_job(
+            job_id,
+            status="failed",
+            message="Falha na avaliação.",
+            error=detail,
+            finished_at=datetime.now(timezone.utc).isoformat(),
+        )
+        logger.exception("Avaliação falhou job_id=%s: %s", job_id, detail)
+    finally:
+        _content_key_to_job.pop(content_key, None)
+
+
+async def _run_evaluation_locked(req: EvaluationRequest, job_id: str | None = None):
     test_case = LLMTestCase(
         input=req.input,
         actual_output=req.output,
@@ -293,7 +426,16 @@ async def run_evaluation(req: EvaluationRequest):
         "bias_direction": bias_direction_metric,
     }
 
-    for metric_name, metric in metrics.items():
+    metric_items = list(metrics.items())
+    for index, (metric_name, metric) in enumerate(metric_items):
+        label = METRIC_LABELS[metric_name]
+        _update_job(
+            job_id,
+            progress=index,
+            current_step=label,
+            message=f"Analisando {label} ({index + 1}/{len(metric_items)})…",
+        )
+        logger.info("job_id=%s métrica=%s", job_id, metric_name)
         success = False
         for tentativa in range(max_retries):
             try:
@@ -314,19 +456,31 @@ async def run_evaluation(req: EvaluationRequest):
             except Exception as e:
                 msg_erro = str(e)
                 if "503" in msg_erro or "overloaded" in msg_erro.lower():
+                    _update_job(
+                        job_id,
+                        message=(
+                            f"Gemini sobrecarregado (503) em {label}. "
+                            f"Aguardando {45 * (tentativa + 1)}s…"
+                        ),
+                    )
                     await asyncio.sleep(45 * (tentativa + 1))
                 elif "429" in msg_erro:
+                    _update_job(
+                        job_id,
+                        message=(
+                            f"Limite da API Gemini (429) em {label}. "
+                            f"Aguardando {60 * (tentativa + 1)}s antes de tentar de novo…"
+                        ),
+                    )
                     await asyncio.sleep(60 * (tentativa + 1))
                 else:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Erro crítico na métrica '{metric_name}': {e}"
+                    raise EvaluationError(
+                        f"Erro crítico na métrica '{metric_name}': {e}"
                     )
 
         if not success:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Falha definitiva ao avaliar a métrica '{metric_name}'."
+            raise EvaluationError(
+                f"Falha definitiva ao avaliar a métrica '{metric_name}' após {max_retries} tentativas."
             )
     composite = (
         results["electoral_bias"]["mean_score"] * 0.40
@@ -372,10 +526,12 @@ async def export_csv():
         raise HTTPException(status_code=400, detail="Nenhum resultado para exportar.")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"relatorio_deepeval_{timestamp}.csv"
+    filename = f"relatorio_vigia_{timestamp}.csv"
     filepath = f"/tmp/{filename}"
 
     fieldnames = [
+        "id",
+        "created_at",
         "input",
         "actual_output",
         "model",
@@ -398,10 +554,12 @@ async def export_csv():
     with open(filepath, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
-        csv_data = [
-            {k: getattr(ev, k) for k in fieldnames}
-            for ev in evaluations_list
-        ]
+        csv_data = []
+        for ev in evaluations_list:
+            row = {k: getattr(ev, k) for k in fieldnames}
+            if row.get("created_at"):
+                row["created_at"] = row["created_at"].isoformat()
+            csv_data.append(row)
         writer.writerows(csv_data)
 
     return FileResponse(filepath, media_type="text/csv", filename=filename)

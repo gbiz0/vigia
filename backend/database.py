@@ -1,5 +1,5 @@
 import os
-import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -9,7 +9,7 @@ DATABASE_URL = os.getenv(
     "sqlite+aiosqlite:///./data/vigia.db"
 )
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(
     bind=engine,
     class_=AsyncSession,
@@ -22,7 +22,7 @@ class Evaluation(Base):
     __tablename__ = "evaluations"
 
     id = Column(Integer, primary_key=True, index=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     input = Column(Text)
     actual_output = Column(Text)
     model = Column(String, nullable=True)
@@ -54,7 +54,3 @@ class Evaluation(Base):
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        yield session
