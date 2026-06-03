@@ -1,10 +1,8 @@
 import os
-import re
 import csv
 import asyncio
 import hashlib
 import logging
-import requests
 from datetime import datetime, timezone
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request
@@ -295,78 +293,12 @@ async def health_check():
         "judge_model": "gemini-2.5-flash",
     }
 
-@app.get("/api/quota/")
-async def get_quota():
-    """Get current Google Gemini API quota information"""
-    try:
-        # Test API with a minimal request to check quota status
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GOOGLE_API_KEY}"
-        headers = {"Content-Type": "application/json"}
-        data = {"contents": [{"parts": [{"text": "test"}]}]}
-        
-        response = requests.post(url, headers=headers, json=data, timeout=5)
-        
-        # Parse the response to get quota info
-        if response.status_code == 200:
-            return {
-                "status": "available",
-                "limit": 20,
-                "remaining": 20,
-                "usage": 0,
-                "reset_time": "Daily reset at midnight UTC",
-                "message": "API quota available"
-            }
-        elif response.status_code == 429:
-            # Extract quota info from error response
-            error_data = response.json()
-            error_msg = error_data.get("error", {}).get("message", "")
-            
-            match = re.search(r'Please retry in ([\d.]+)s', error_msg)
-            retry_after = match.group(1) if match else "unknown"
-            
-            return {
-                "status": "exceeded",
-                "limit": 20,
-                "remaining": 0,
-                "usage": 20,
-                "retry_after_seconds": float(retry_after) if retry_after != "unknown" else None,
-                "message": f"API quota exceeded. Retry available in {retry_after}s",
-                "error": error_msg
-            }
-        else:
-            # API error but not quota related
-            return {
-                "status": "error",
-                "limit": 20,
-                "remaining": None,
-                "message": f"API error: {response.status_code}",
-                "error": response.text[:200]
-            }
-    except requests.exceptions.Timeout:
-        return {
-            "status": "timeout",
-            "message": "Could not reach Google API (timeout)",
-            "limit": 20,
-            "remaining": None
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Error checking quota: {str(e)}",
-            "limit": 20,
-            "remaining": None
-        }
-
 @app.get("/api/evaluate/")
 async def get_evaluations():
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Evaluation).order_by(Evaluation.created_at.desc()))
         evaluations_list = result.scalars().all()
         return evaluations_list
-
-@app.options("/api/evaluate/")
-async def options_evaluate():
-    return {}
 
 @app.delete("/api/evaluate/{evaluation_id}")
 async def delete_evaluation(evaluation_id: int):
