@@ -68,18 +68,28 @@ export default function App() {
   const [alert, setAlert] = useState(null);
   const [apiStatus, setApiStatus] = useState("checking"); // 'ok', 'error', 'checking'
   const [selectedEvaluationId, setSelectedEvaluationId] = useState(null);
+  const [quota, setQuota] = useState(null);
   const isEvaluatingRef = useRef(false);
   const submitLockRef = useRef(false);
 
   useEffect(() => {
     checkHealth();
     fetchEvaluations();
+    checkQuota();
     const interval = setInterval(() => {
       if (!isEvaluatingRef.current) {
         checkHealth({ silent: true });
       }
     }, 15000);
-    return () => clearInterval(interval);
+    const quotaInterval = setInterval(() => {
+      if (!isEvaluatingRef.current) {
+        checkQuota();
+      }
+    }, 30000);
+    return () => {
+      clearInterval(interval);
+      clearInterval(quotaInterval);
+    };
   }, []);
 
   useEffect(() => {
@@ -113,6 +123,17 @@ export default function App() {
         const detail = err.response?.data?.message || err.message;
         showAlert(`Erro de Conexão: ${detail}`, "error");
       }
+    }
+  };
+
+  const checkQuota = async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/quota/`, {
+        timeout: HEALTH_TIMEOUT_MS,
+      });
+      setQuota(res.data);
+    } catch (err) {
+      console.error("Error checking quota:", err);
     }
   };
 
@@ -484,6 +505,81 @@ export default function App() {
               >
                 Tentar reconectar
               </button>
+            )}
+            {quota && (
+              <div
+                style={{
+                  marginTop: 16,
+                  paddingTop: 16,
+                  borderTop: "1px solid #1e1e2e",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    marginBottom: 10,
+                  }}
+                >
+                  <span
+                    className={`status-dot dot-${quota.status === "available" ? "ok" : "error"}`}
+                  ></span>
+                  <span
+                    style={{
+                      color: "#44445a",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {quota.status === "available"
+                      ? "Quota Disponível"
+                      : "Quota Excedida"}
+                  </span>
+                </div>
+                {quota.status === "available" ? (
+                  <div>
+                    <div
+                      style={{
+                        height: 6,
+                        background: "#1a1a2e",
+                        borderRadius: 3,
+                        overflow: "hidden",
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${(quota.remaining / quota.limit) * 100}%`,
+                          background: "#22c55e",
+                          transition: "width 0.3s",
+                          boxShadow: "0 0 8px rgba(34, 197, 94, 0.4)",
+                        }}
+                      />
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "#888899",
+                        textAlign: "center",
+                      }}
+                    >
+                      <strong style={{ color: "#22c55e" }}>
+                        {quota.remaining}
+                      </strong>
+                      /{quota.limit} requisições
+                    </div>
+                  </div>
+                ) : quota.status === "exceeded" ? (
+                  <div style={{ fontSize: "11px", color: "#ff6b6b" }}>
+                    Limite diário atingido
+                  </div>
+                ) : (
+                  <div style={{ fontSize: "11px", color: "#888899" }}>
+                    {quota.message || "Verificando..."}
+                  </div>
+                )}
+              </div>
             )}
             <div style={{ marginTop: 6, color: "#2a2a3a" }}>Juiz · Gemini 2.5 Flash</div>
           </div>
